@@ -19,7 +19,7 @@ logger = logging.getLogger("fastapi_app")
 # Konfiguracja CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # W produkcji zastąp konkretnymi domenami
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

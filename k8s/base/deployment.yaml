@@ -22,7 +22,22 @@ spec:
       initContainers:
       - name: wait-for-db
         image: postgres:14
-        command: ['sh', '-c', 'until pg_isready -h db -p 5432; do echo waiting for database; sleep 2; done;']
+        command: 
+        - sh
+        - -c
+        - |
+          echo "Waiting for database to be ready..."
+          until pg_isready -h db -p 5432 -U appuser -d appdb; do
+            echo "Database not ready yet. Waiting..."
+            sleep 5
+          done
+          echo "Database is ready!"
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: postgres-password
       containers:
       - name: app
         image: ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest

@@ -11,16 +11,6 @@ resources:
   - postgres.yaml
   - pgadmin.yaml
   - ingress.yaml
-  - prometheus-config.yaml
-  - prometheus-deployment.yaml
-  - grafana-deployment.yaml
-  - loki-config.yaml
-  - loki-deployment.yaml
-  - promtail-config.yaml
-  - promtail-deployment.yaml
-  - tempo-config.yaml
-  - tempo-deployment.yaml
-  - kyverno-policy.yaml
 
 commonLabels:
   app: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
