@@ -1541,7 +1541,7 @@ spec:
   type: ClusterIP
 EOF
 
-# PostgreSQL Deployment - POPRAWIONA WERSJA
+# PostgreSQL Deployment - POPRAWIONA WERSJA (bez problemu z initdb jako root)
 cat << 'EOF' > k8s/base/postgres.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -1575,24 +1575,8 @@ spec:
               key: postgres-password
         - name: POSTGRES_HOST_AUTH_METHOD
           value: "md5"
-        command:
-        - bash
-        - -c
-        - |
-          # Sprawdź czy baza jest już zainicjalizowana
-          if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
-            echo "Initializing database..."
-            initdb -D /var/lib/postgresql/data
-          else
-            echo "Database already exists, skipping initdb"
-          fi
-          
-          # Konfiguruj połączenia zdalne
-          echo "host all all all md5" >> /var/lib/postgresql/data/pg_hba.conf
-          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
-          
-          # Uruchom serwer PostgreSQL
-          exec postgres -D /var/lib/postgresql/data
+        - name: POSTGRES_INITDB_ARGS
+          value: "--auth-host=md5"
         ports:
         - containerPort: 5432
         resources:
@@ -1618,6 +1602,10 @@ spec:
             - exec pg_isready -U appuser -d appdb
           initialDelaySeconds: 30
           periodSeconds: 5
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          fsGroup: 999
 ---
 apiVersion: v1
 kind: Service
