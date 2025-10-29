@@ -19,13 +19,16 @@ spec:
       - name: promtail
         image: grafana/promtail:2.9.0
         args:
-          - "-config.file=/etc/promtail/promtail.yaml"
-        ports:
-        - containerPort: 9080
+          - -config.file=/etc/promtail/promtail.yaml
         volumeMounts:
         - name: config
           mountPath: /etc/promtail
+        - name: varlog
+          mountPath: /var/log
       volumes:
       - name: config
         configMap:
           name: promtail-config
+      - name: varlog
+        hostPath:
+          path: /var/log

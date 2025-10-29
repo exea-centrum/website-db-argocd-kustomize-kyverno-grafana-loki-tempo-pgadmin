@@ -20,23 +20,18 @@ spec:
         image: grafana/grafana:latest
         ports:
         - containerPort: 3000
-        volumeMounts:
-        - name: datasources
-          mountPath: /etc/grafana/provisioning/datasources
-        - name: dashboards
-          mountPath: /etc/grafana/provisioning/dashboards
-        - name: dashboard-files
-          mountPath: /var/lib/grafana/dashboards
-      volumes:
-      - name: datasources
-        configMap:
-          name: grafana-datasources
-      - name: dashboards
-        configMap:
-          name: grafana-dashboards
-      - name: dashboard-files
-        configMap:
-          name: grafana-dashboard-fastapi
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: admin
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
 ---
 apiVersion: v1
 kind: Service

@@ -27,13 +27,3 @@ spec:
             name: pgadmin
             port:
               number: 80
-  - host: grafana.website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin.local
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: grafana
-            port:
-              number: 3000

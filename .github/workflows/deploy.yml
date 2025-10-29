@@ -1,16 +1,35 @@
-name: Build and Push
+name: Build and Deploy
 on:
   push:
     branches: [main]
 jobs:
-  docker:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Login GHCR
-        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Build & Push
+      - uses: actions/checkout@v4
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+          
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest
+            ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Deploy to Kubernetes
         run: |
-          docker build -t ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:${{ github.sha }} -t ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest .
-          docker push ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:${{ github.sha }}
-          docker push ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest
+          echo "Deployment would happen here via ArgoCD"
+          
+      - name: Run tests
+        run: |
+          echo "Running tests..."

@@ -13,9 +13,6 @@ resources:
   - ingress.yaml
   - prometheus-config.yaml
   - prometheus-deployment.yaml
-  - grafana-provisioning-datasources.yaml
-  - grafana-provisioning-dashboards.yaml
-  - grafana-dashboard-config.yaml
   - grafana-deployment.yaml
   - loki-config.yaml
   - loki-deployment.yaml
