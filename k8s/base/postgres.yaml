@@ -30,11 +30,18 @@ spec:
                   key: postgres-password
             - name: POSTGRES_HOST_AUTH_METHOD
               value: "md5"
-          args:
+          command:
+            - bash
             - -c
-            - listen_addresses=*
-            - -c
-            - max_connections=100
+            - |
+              # Czekaj aż baza będzie gotowa do konfiguracji
+              until pg_isready -U appuser -d appdb; do sleep 1; done
+              # Dodaj wpis do pg_hba.conf dla połączeń zdalnych
+              echo "host all all all md5" >> /var/lib/postgresql/data/pg_hba.conf
+              # Uruchom ponownie PostgreSQL aby zastosować zmiany
+              pg_ctl restart -D /var/lib/postgresql/data
+              # Uruchom serwer
+              exec docker-entrypoint.sh postgres
           ports:
             - containerPort: 5432
           resources:
@@ -50,7 +57,7 @@ spec:
                 - sh
                 - -c
                 - exec pg_isready -U appuser -d appdb
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             periodSeconds: 10
           readinessProbe:
             exec:
@@ -58,5 +65,20 @@ spec:
                 - sh
                 - -c
                 - exec pg_isready -U appuser -d appdb
-            initialDelaySeconds: 5
+            initialDelaySeconds: 30
             periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: davtrowebdb
+  labels:
+    app: db
+spec:
+  selector:
+    app: db
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
