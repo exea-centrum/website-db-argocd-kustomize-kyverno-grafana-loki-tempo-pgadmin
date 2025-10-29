@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+  namespace: davtrowebdb
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+            port:
+              number: 80
+  - host: pgadmin.website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: pgadmin
+            port:
+              number: 80
+  - host: grafana.website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000

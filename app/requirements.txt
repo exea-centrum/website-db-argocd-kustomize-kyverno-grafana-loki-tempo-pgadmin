@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+jinja2
+psycopg2-binary
+prometheus-fastapi-instrumentator
+python-multipart

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><title>Kwestionariusz</title></head>
+<body>
+  <h1>Formularz</h1>
+  {% if submitted %}
+    <p><b>Dziękujemy za odpowiedź!</b></p>
+  {% endif %}
+  <form method="post" action="/submit">
+    <label>Pytanie:</label>
+    <select name="question">
+      {% for q in questions %}
+        <option value="{{q}}">{{q}}</option>
+      {% endfor %}
+    </select>
+    <label>Odpowiedź:</label>
+    <input type="text" name="answer"/>
+    <input type="submit" value="Wyślij"/>
+  </form>
+</body>
+</html>

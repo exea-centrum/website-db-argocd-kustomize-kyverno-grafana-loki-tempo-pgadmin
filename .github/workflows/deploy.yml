@@ -1,0 +1,16 @@
+name: Build and Push
+on:
+  push:
+    branches: [main]
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Login GHCR
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Build & Push
+        run: |
+          docker build -t ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:${{ github.sha }} -t ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest .
+          docker push ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:${{ github.sha }}
+          docker push ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest

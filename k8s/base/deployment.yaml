@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+  namespace: davtrowebdb
+  labels:
+    app: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+  template:
+    metadata:
+      labels:
+        app: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: app
+        image: ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin-config
+              key: DATABASE_URL
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5

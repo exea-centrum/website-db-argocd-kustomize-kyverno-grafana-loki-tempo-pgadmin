@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin.git
+    targetRevision: main
+    path: k8s/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: davtrowebdb
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin-config
+  namespace: davtrowebdb
+data:
+  DATABASE_URL: "dbname=appdb user=appuser password=apppass host=db"

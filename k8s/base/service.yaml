@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+  namespace: davtrowebdb
+  labels:
+    app: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+spec:
+  selector:
+    app: website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
