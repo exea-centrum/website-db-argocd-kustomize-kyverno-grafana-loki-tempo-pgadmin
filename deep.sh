@@ -2137,7 +2137,7 @@ spec:
     - CreateNamespace=true
 EOF
 
-# GitHub Actions
+# GitHub Actions - POPRAWIONA WERSJA
 cat << EOF > .github/workflows/deploy.yml
 name: Build and Deploy
 on:
@@ -2164,8 +2164,8 @@ jobs:
           tags: |
             $REGISTRY:latest
             $REGISTRY:\${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=$REGISTRY:latest
+          cache-to: type=inline
           
       - name: Deploy to Kubernetes
         run: |
