@@ -25,7 +25,7 @@ class SurveyResponse(BaseModel):
 
 def get_db_connection():
     """Utwórz połączenie z bazą danych z retry logic"""
-    max_retries = 5
+    max_retries = 10
     for attempt in range(max_retries):
         try:
             conn = psycopg2.connect(DB_CONN)
@@ -33,14 +33,14 @@ def get_db_connection():
         except psycopg2.OperationalError as e:
             logger.warning(f"Attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(2)
+                time.sleep(5)
             else:
                 logger.error(f"All connection attempts failed: {e}")
                 raise e
 
 def init_database():
     """Inicjalizacja bazy danych"""
-    max_retries = 10
+    max_retries = 15
     for attempt in range(max_retries):
         try:
             conn = get_db_connection()
@@ -83,7 +83,7 @@ def init_database():
         except Exception as e:
             logger.warning(f"Database initialization attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(5)
+                time.sleep(10)
             else:
                 logger.error(f"All database initialization attempts failed: {e}")
 

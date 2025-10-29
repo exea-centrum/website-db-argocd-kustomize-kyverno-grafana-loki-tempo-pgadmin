@@ -40,7 +40,7 @@ class SurveyResponse(BaseModel):
 
 def get_db_connection():
     """Utwórz połączenie z bazą danych z retry logic"""
-    max_retries = 5
+    max_retries = 10
     for attempt in range(max_retries):
         try:
             conn = psycopg2.connect(DB_CONN)
@@ -48,14 +48,14 @@ def get_db_connection():
         except psycopg2.OperationalError as e:
             logger.warning(f"Attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(2)
+                time.sleep(5)
             else:
                 logger.error(f"All connection attempts failed: {e}")
                 raise e
 
 def init_database():
     """Inicjalizacja bazy danych"""
-    max_retries = 10
+    max_retries = 15
     for attempt in range(max_retries):
         try:
             conn = get_db_connection()
@@ -98,7 +98,7 @@ def init_database():
         except Exception as e:
             logger.warning(f"Database initialization attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(5)
+                time.sleep(10)
             else:
                 logger.error(f"All database initialization attempts failed: {e}")
 
@@ -609,7 +609,7 @@ cat << 'EOF' > "$APP_DIR/templates/index.html"
             <ul class="space-y-2">
               <li class="text-gray-400 flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                Specjalizacja w sztucznej inteligencji i uczeniu maszynowym
+                Specjalizacja w sztucznej inteligencji i uczeniu maszynowem
               </li>
               <li class="text-gray-400 flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
@@ -1510,14 +1510,14 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 60
+          initialDelaySeconds: 90
           periodSeconds: 10
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 5
           timeoutSeconds: 3
 EOF
@@ -1579,11 +1579,20 @@ spec:
         - bash
         - -c
         - |
-          # Set up PostgreSQL to allow remote connections
+          # Sprawdź czy baza jest już zainicjalizowana
+          if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+            echo "Initializing database..."
+            initdb -D /var/lib/postgresql/data
+          else
+            echo "Database already exists, skipping initdb"
+          fi
+          
+          # Konfiguruj połączenia zdalne
           echo "host all all all md5" >> /var/lib/postgresql/data/pg_hba.conf
           echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
-          # Start PostgreSQL
-          exec docker-entrypoint.sh postgres
+          
+          # Uruchom serwer PostgreSQL
+          exec postgres -D /var/lib/postgresql/data
         ports:
         - containerPort: 5432
         resources:
@@ -1599,7 +1608,7 @@ spec:
             - sh
             - -c
             - exec pg_isready -U appuser -d appdb
-          initialDelaySeconds: 45
+          initialDelaySeconds: 60
           periodSeconds: 10
         readinessProbe:
           exec:
@@ -1607,7 +1616,7 @@ spec:
             - sh
             - -c
             - exec pg_isready -U appuser -d appdb
-          initialDelaySeconds: 15
+          initialDelaySeconds: 30
           periodSeconds: 5
 ---
 apiVersion: v1
