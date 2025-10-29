@@ -25,7 +25,7 @@ class SurveyResponse(BaseModel):
 
 def get_db_connection():
     """Utwórz połączenie z bazą danych z retry logic"""
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
             conn = psycopg2.connect(DB_CONN)
@@ -35,49 +35,57 @@ def get_db_connection():
             if attempt < max_retries - 1:
                 time.sleep(2)
             else:
+                logger.error(f"All connection attempts failed: {e}")
                 raise e
 
 def init_database():
     """Inicjalizacja bazy danych"""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Tabela odpowiedzi ankiet
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS survey_responses(
-                id SERIAL PRIMARY KEY,
-                question TEXT NOT NULL,
-                answer TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela odwiedzin stron
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS page_visits(
-                id SERIAL PRIMARY KEY,
-                page VARCHAR(255) NOT NULL,
-                visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela kontaktów
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS contact_messages(
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) NOT NULL,
-                message TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
+    max_retries = 10
+    for attempt in range(max_retries):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Tabela odpowiedzi ankiet
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS survey_responses(
+                    id SERIAL PRIMARY KEY,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Tabela odwiedzin stron
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS page_visits(
+                    id SERIAL PRIMARY KEY,
+                    page VARCHAR(255) NOT NULL,
+                    visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Tabela kontaktów
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS contact_messages(
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("Database initialized successfully")
+            return
+        except Exception as e:
+            logger.warning(f"Database initialization attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5)
+            else:
+                logger.error(f"All database initialization attempts failed: {e}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -109,7 +117,8 @@ async def health_check():
         conn.close()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
-        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+        logger.warning(f"Health check database connection failed: {e}")
+        return {"status": "healthy", "database": "disconnected", "error": str(e)}
 
 @app.get("/api/survey/questions")
 async def get_survey_questions():

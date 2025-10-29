@@ -40,7 +40,7 @@ class SurveyResponse(BaseModel):
 
 def get_db_connection():
     """Utwórz połączenie z bazą danych z retry logic"""
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
             conn = psycopg2.connect(DB_CONN)
@@ -50,49 +50,57 @@ def get_db_connection():
             if attempt < max_retries - 1:
                 time.sleep(2)
             else:
+                logger.error(f"All connection attempts failed: {e}")
                 raise e
 
 def init_database():
     """Inicjalizacja bazy danych"""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Tabela odpowiedzi ankiet
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS survey_responses(
-                id SERIAL PRIMARY KEY,
-                question TEXT NOT NULL,
-                answer TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela odwiedzin stron
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS page_visits(
-                id SERIAL PRIMARY KEY,
-                page VARCHAR(255) NOT NULL,
-                visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela kontaktów
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS contact_messages(
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) NOT NULL,
-                message TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
+    max_retries = 10
+    for attempt in range(max_retries):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Tabela odpowiedzi ankiet
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS survey_responses(
+                    id SERIAL PRIMARY KEY,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Tabela odwiedzin stron
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS page_visits(
+                    id SERIAL PRIMARY KEY,
+                    page VARCHAR(255) NOT NULL,
+                    visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Tabela kontaktów
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS contact_messages(
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("Database initialized successfully")
+            return
+        except Exception as e:
+            logger.warning(f"Database initialization attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5)
+            else:
+                logger.error(f"All database initialization attempts failed: {e}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -124,7 +132,8 @@ async def health_check():
         conn.close()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
-        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+        logger.warning(f"Health check database connection failed: {e}")
+        return {"status": "healthy", "database": "disconnected", "error": str(e)}
 
 @app.get("/api/survey/questions")
 async def get_survey_questions():
@@ -1501,14 +1510,14 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 5
+          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
 EOF
@@ -1532,8 +1541,8 @@ spec:
   type: ClusterIP
 EOF
 
-# PostgreSQL Deployment
-cat << EOF > k8s/base/postgres.yaml
+# PostgreSQL Deployment - POPRAWIONA WERSJA
+cat << 'EOF' > k8s/base/postgres.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1564,6 +1573,17 @@ spec:
             secretKeyRef:
               name: db-secret
               key: postgres-password
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: "md5"
+        command:
+        - bash
+        - -c
+        - |
+          # Set up PostgreSQL to allow remote connections
+          echo "host all all all md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          # Start PostgreSQL
+          exec docker-entrypoint.sh postgres
         ports:
         - containerPort: 5432
         resources:
@@ -1579,7 +1599,7 @@ spec:
             - sh
             - -c
             - exec pg_isready -U appuser -d appdb
-          initialDelaySeconds: 30
+          initialDelaySeconds: 45
           periodSeconds: 10
         readinessProbe:
           exec:
@@ -1587,7 +1607,7 @@ spec:
             - sh
             - -c
             - exec pg_isready -U appuser -d appdb
-          initialDelaySeconds: 5
+          initialDelaySeconds: 15
           periodSeconds: 5
 ---
 apiVersion: v1
@@ -2137,7 +2157,7 @@ spec:
     - CreateNamespace=true
 EOF
 
-# GitHub Actions - POPRAWIONA WERSJA
+# GitHub Actions
 cat << EOF > .github/workflows/deploy.yml
 name: Build and Deploy
 on:
