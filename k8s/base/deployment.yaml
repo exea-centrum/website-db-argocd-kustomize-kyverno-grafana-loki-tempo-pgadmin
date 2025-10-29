@@ -19,6 +19,10 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
+      initContainers:
+      - name: wait-for-db
+        image: postgres:14
+        command: ['sh', '-c', 'until pg_isready -h db -p 5432; do echo waiting for database; sleep 2; done;']
       containers:
       - name: app
         image: ghcr.io/exea-centrum/website-db-argocd-kustomize-kyverno-grafana-loki-tempo-pgadmin:latest

@@ -10,13 +10,14 @@ echo "📁 Tworzenie katalogów..."
 mkdir -p "$APP_DIR/templates" "k8s/base" ".github/workflows"
 
 # ==============================
-# FastAPI Aplikacja z ankietą
+# FastAPI Aplikacja z ankietą - POPRAWIONA WERSJA Z CORS
 # ==============================
 cat << 'EOF' > "$APP_DIR/main.py"
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 import os
 import logging
@@ -30,6 +31,15 @@ templates = Jinja2Templates(directory="templates")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fastapi_app")
 
+# Konfiguracja CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # W produkcji zastąp konkretnymi domenami
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 DB_CONN = os.getenv("DATABASE_URL", "dbname=appdb user=appuser password=apppass host=db")
 
 Instrumentator().instrument(app).expose(app)
@@ -40,7 +50,7 @@ class SurveyResponse(BaseModel):
 
 def get_db_connection():
     """Utwórz połączenie z bazą danych z retry logic"""
-    max_retries = 10
+    max_retries = 30
     for attempt in range(max_retries):
         try:
             conn = psycopg2.connect(DB_CONN)
@@ -48,14 +58,14 @@ def get_db_connection():
         except psycopg2.OperationalError as e:
             logger.warning(f"Attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(5)
+                time.sleep(10)
             else:
                 logger.error(f"All connection attempts failed: {e}")
                 raise e
 
 def init_database():
     """Inicjalizacja bazy danych"""
-    max_retries = 15
+    max_retries = 30
     for attempt in range(max_retries):
         try:
             conn = get_db_connection()
@@ -1465,7 +1475,7 @@ stringData:
   postgres-password: "apppass"
 EOF
 
-# App Deployment
+# App Deployment - POPRAWIONA WERSJA Z initContainer
 cat << EOF > k8s/base/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -1488,6 +1498,10 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
+      initContainers:
+      - name: wait-for-db
+        image: postgres:14
+        command: ['sh', '-c', 'until pg_isready -h db -p 5432; do echo waiting for database; sleep 2; done;']
       containers:
       - name: app
         image: $REGISTRY:latest
