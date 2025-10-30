@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
+from psycopg2 import pool
 import os
 import logging
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -29,73 +30,100 @@ DB_CONN = os.getenv("DATABASE_URL", "dbname=appdb user=appuser password=apppass 
 
 Instrumentator().instrument(app).expose(app)
 
+# Connection pool
+connection_pool = None
+
 class SurveyResponse(BaseModel):
     question: str
     answer: str
 
-def get_db_connection():
-    """Utwórz połączenie z bazą danych z retry logic"""
-    max_retries = 30
+def init_connection_pool():
+    """Inicjalizacja puli połączeń"""
+    global connection_pool
+    max_retries = 10
     for attempt in range(max_retries):
         try:
-            conn = psycopg2.connect(DB_CONN)
-            return conn
+            connection_pool = psycopg2.pool.SimpleConnectionPool(
+                1,  # min connections
+                20, # max connections  
+                DB_CONN
+            )
+            logger.info("Connection pool initialized successfully")
+            return
         except psycopg2.OperationalError as e:
-            logger.warning(f"Attempt {attempt + 1} failed: {e}")
+            logger.warning(f"Connection pool attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(10)
+                time.sleep(5)
             else:
-                logger.error(f"All connection attempts failed: {e}")
+                logger.error(f"All connection pool attempts failed: {e}")
                 raise e
+
+def get_db_connection():
+    """Pobierz połączenie z puli"""
+    global connection_pool
+    if connection_pool is None:
+        init_connection_pool()
+    
+    try:
+        return connection_pool.getconn()
+    except Exception as e:
+        logger.error(f"Error getting connection from pool: {e}")
+        raise e
+
+def release_db_connection(conn):
+    """Zwróć połączenie do puli"""
+    global connection_pool
+    if connection_pool and conn:
+        try:
+            connection_pool.putconn(conn)
+        except Exception as e:
+            logger.error(f"Error releasing connection: {e}")
 
 def init_database():
     """Inicjalizacja bazy danych"""
-    max_retries = 30
-    for attempt in range(max_retries):
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor()
-            
-            # Tabela odpowiedzi ankiet
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS survey_responses(
-                    id SERIAL PRIMARY KEY,
-                    question TEXT NOT NULL,
-                    answer TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Tabela odwiedzin stron
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS page_visits(
-                    id SERIAL PRIMARY KEY,
-                    page VARCHAR(255) NOT NULL,
-                    visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Tabela kontaktów
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS contact_messages(
-                    id SERIAL PRIMARY KEY,
-                    email VARCHAR(255) NOT NULL,
-                    message TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            conn.commit()
-            cur.close()
-            conn.close()
-            logger.info("Database initialized successfully")
-            return
-        except Exception as e:
-            logger.warning(f"Database initialization attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(10)
-            else:
-                logger.error(f"All database initialization attempts failed: {e}")
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Tabela odpowiedzi ankiet
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS survey_responses(
+                id SERIAL PRIMARY KEY,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Tabela odwiedzin stron
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS page_visits(
+                id SERIAL PRIMARY KEY,
+                page VARCHAR(255) NOT NULL,
+                visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Tabela kontaktów
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS contact_messages(
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        conn.commit()
+        cur.close()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        raise e
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 @app.on_event("startup")
 async def startup_event():
@@ -104,31 +132,37 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Główna strona osobista"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("INSERT INTO page_visits (page) VALUES ('home')")
         conn.commit()
         cur.close()
-        conn.close()
     except Exception as e:
         logger.error(f"Error logging page visit: {e}")
+    finally:
+        if conn:
+            release_db_connection(conn)
     
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT 1")
         cur.close()
-        conn.close()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.warning(f"Health check database connection failed: {e}")
         return {"status": "healthy", "database": "disconnected", "error": str(e)}
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 @app.get("/api/survey/questions")
 async def get_survey_questions():
@@ -170,6 +204,7 @@ async def get_survey_questions():
 @app.post("/api/survey/submit")
 async def submit_survey(response: SurveyResponse):
     """Zapisuje odpowiedź z ankiety"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -179,16 +214,19 @@ async def submit_survey(response: SurveyResponse):
         )
         conn.commit()
         cur.close()
-        conn.close()
         logger.info(f"Survey response saved: {response.question} -> {response.answer}")
         return {"status": "success", "message": "Dziękujemy za wypełnienie ankiety!"}
     except Exception as e:
         logger.error(f"Error saving survey response: {e}")
         raise HTTPException(status_code=500, detail="Błąd podczas zapisywania odpowiedzi")
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 @app.get("/api/survey/stats")
 async def get_survey_stats():
     """Pobiera statystyki ankiet"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -207,7 +245,6 @@ async def get_survey_stats():
         total_visits = cur.fetchone()[0]
         
         cur.close()
-        conn.close()
         
         # Formatowanie danych
         stats = {}
@@ -224,10 +261,14 @@ async def get_survey_stats():
     except Exception as e:
         logger.error(f"Error fetching survey stats: {e}")
         raise HTTPException(status_code=500, detail="Błąd podczas pobierania statystyk")
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 @app.post("/api/contact")
 async def submit_contact(email: str = Form(...), message: str = Form(...)):
     """Zapisuje wiadomość kontaktową"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -237,16 +278,19 @@ async def submit_contact(email: str = Form(...), message: str = Form(...)):
         )
         conn.commit()
         cur.close()
-        conn.close()
         logger.info(f"Contact message saved from: {email}")
         return {"status": "success", "message": "Wiadomość została wysłana!"}
     except Exception as e:
         logger.error(f"Error saving contact message: {e}")
         raise HTTPException(status_code=500, detail="Błąd podczas wysyłania wiadomości")
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 @app.get("/api/visits")
 async def get_visit_stats():
     """Pobiera statystyki odwiedzin"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -261,7 +305,6 @@ async def get_visit_stats():
         visits = cur.fetchall()
         
         cur.close()
-        conn.close()
         
         return {
             "visits": [
@@ -276,6 +319,17 @@ async def get_visit_stats():
     except Exception as e:
         logger.error(f"Error fetching visit stats: {e}")
         raise HTTPException(status_code=500, detail="Błąd podczas pobierania statystyk odwiedzin")
+    finally:
+        if conn:
+            release_db_connection(conn)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Zamknij pulę połączeń przy wyłączaniu aplikacji"""
+    global connection_pool
+    if connection_pool:
+        connection_pool.closeall()
+        logger.info("Connection pool closed")
 
 if __name__ == "__main__":
     import uvicorn
