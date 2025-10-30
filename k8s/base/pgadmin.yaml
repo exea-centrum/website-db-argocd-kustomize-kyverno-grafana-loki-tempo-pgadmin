@@ -36,7 +36,7 @@ spec:
                   key: postgres-password
       containers:
         - name: pgadmin
-          image: dpage/pgadmin4:6.21 # Użyj stabilnej wersji
+          image: dpage/pgadmin4:7.8 # Użyj konkretnej stabilnej wersji
           env:
             - name: PGADMIN_DEFAULT_EMAIL
               value: "admin@admin.com"
@@ -46,7 +46,11 @@ spec:
               value: "False"
             - name: PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED
               value: "False"
-            # Usunięto zmienne związane z konfiguracją przez plik, które mogą powodować problemy
+            # Dodaj te zmienne aby wyłączyć problematyczne funkcje
+            - name: PGADMIN_CONFIG_LOGIN_BANNER
+              value: "Welcome to pgAdmin 4"
+            - name: PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED
+              value: "False"
           ports:
             - containerPort: 80
           resources:
@@ -62,7 +66,7 @@ spec:
               port: 80
             initialDelaySeconds: 180 # Zwiększono do 180 sekund
             periodSeconds: 30
-            timeoutSeconds: 10
+            timeoutSeconds: 15
             failureThreshold: 3
           readinessProbe:
             httpGet:
@@ -79,15 +83,3 @@ spec:
         - name: pgadmin-data
           persistentVolumeClaim:
             claimName: pgadmin-pvc
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pgadmin-pvc
-  namespace: davtrowebdb
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
