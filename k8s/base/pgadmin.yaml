@@ -36,7 +36,7 @@ spec:
                   key: postgres-password
       containers:
         - name: pgadmin
-          image: dpage/pgadmin4:7.8 # Użyj konkretnej stabilnej wersji
+          image: dpage/pgadmin4:7.8
           env:
             - name: PGADMIN_DEFAULT_EMAIL
               value: "admin@admin.com"
@@ -46,7 +46,6 @@ spec:
               value: "False"
             - name: PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED
               value: "False"
-            # Dodaj te zmienne aby wyłączyć problematyczne funkcje
             - name: PGADMIN_CONFIG_LOGIN_BANNER
               value: "Welcome to pgAdmin 4"
             - name: PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED
@@ -64,7 +63,7 @@ spec:
             httpGet:
               path: /misc/ping
               port: 80
-            initialDelaySeconds: 180 # Zwiększono do 180 sekund
+            initialDelaySeconds: 180
             periodSeconds: 30
             timeoutSeconds: 15
             failureThreshold: 3
@@ -72,7 +71,7 @@ spec:
             httpGet:
               path: /misc/ping
               port: 80
-            initialDelaySeconds: 120 # Zwiększono do 120 sekund
+            initialDelaySeconds: 120
             periodSeconds: 20
             timeoutSeconds: 10
             failureThreshold: 3
@@ -81,5 +80,4 @@ spec:
               mountPath: /var/lib/pgadmin
       volumes:
         - name: pgadmin-data
-          persistentVolumeClaim:
-            claimName: pgadmin-pvc
+          emptyDir: {}
