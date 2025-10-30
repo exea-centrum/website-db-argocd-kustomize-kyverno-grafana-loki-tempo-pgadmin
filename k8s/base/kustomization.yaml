@@ -10,6 +10,7 @@ resources:
   - service.yaml
   - postgres.yaml
   - pgadmin.yaml
+  - aminer.yaml
   - ingress.yaml
   - prometheus-config.yaml
   - prometheus-deployment.yaml

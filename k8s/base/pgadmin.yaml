@@ -15,25 +15,6 @@ spec:
       labels:
         app: pgadmin
     spec:
-      initContainers:
-        - name: wait-for-db
-          image: postgres:14
-          command:
-            - sh
-            - -c
-            - |
-              echo "Waiting for database to be ready..."
-              until pg_isready -h db -p 5432 -U appuser -d appdb; do
-                echo "Database not ready yet. Waiting..."
-                sleep 5
-              done
-              echo "Database is ready!"
-          env:
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db-secret
-                  key: postgres-password
       containers:
         - name: pgadmin
           image: dpage/pgadmin4:7.8
@@ -42,14 +23,6 @@ spec:
               value: "admin@admin.com"
             - name: PGADMIN_DEFAULT_PASSWORD
               value: "admin"
-            - name: PGADMIN_CONFIG_SERVER_MODE
-              value: "False"
-            - name: PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED
-              value: "False"
-            - name: PGADMIN_CONFIG_LOGIN_BANNER
-              value: "Welcome to pgAdmin 4"
-            - name: PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED
-              value: "False"
           ports:
             - containerPort: 80
           resources:
@@ -59,25 +32,3 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "500m"
-          livenessProbe:
-            httpGet:
-              path: /misc/ping
-              port: 80
-            initialDelaySeconds: 180
-            periodSeconds: 30
-            timeoutSeconds: 15
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /misc/ping
-              port: 80
-            initialDelaySeconds: 120
-            periodSeconds: 20
-            timeoutSeconds: 10
-            failureThreshold: 3
-          volumeMounts:
-            - name: pgadmin-data
-              mountPath: /var/lib/pgadmin
-      volumes:
-        - name: pgadmin-data
-          emptyDir: {}
