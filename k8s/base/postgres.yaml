@@ -92,7 +92,7 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  storageClassName: standard
+  storageClassName: microk8s-hostpath
 ---
 apiVersion: v1
 kind: Service
