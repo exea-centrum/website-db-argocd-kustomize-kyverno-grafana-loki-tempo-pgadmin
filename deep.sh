@@ -10,7 +10,7 @@ echo "📁 Tworzenie katalogów..."
 mkdir -p "$APP_DIR/templates" "k8s/base" ".github/workflows"
 
 # ==============================
-# FastAPI Aplikacja z ankietą - POPRAWIONA WERSJA
+# FastAPI Aplikacja z ankietą - POPRAWIONA WERSJA Z CORS
 # ==============================
 cat << 'EOF' > "$APP_DIR/main.py"
 from fastapi import FastAPI, Form, Request, HTTPException
@@ -34,7 +34,7 @@ logger = logging.getLogger("fastapi_app")
 # Konfiguracja CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # W produkcji zastąp konkretnymi domenami
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -574,7 +574,7 @@ cat << 'EOF' > "$APP_DIR/templates/index.html"
               osobowo.
             </p>
           </div>
-          <div class="grid md:grid-cols-3 gap-6">
+          <div class="grid md:grid-cols-3 gap=6">
             <div
               class="bg-gradient-to-br from-blue-500/10 to-purple-500/10 backdrop-blur-lg border border-blue-500/20 rounded-xl p-6 hover:scale-105 transition-transform cursor-pointer"
               onclick="showTab('edu')"
@@ -704,7 +704,7 @@ cat << 'EOF' > "$APP_DIR/templates/index.html"
       <div id="skills-tab" class="tab-content hidden">
         <div class="space-y-6 animate-fade-in">
           <h2 class="text-4xl font-bold mb-8 text-purple-300">Umiejętności</h2>
-          <div class="grid md:grid-cols-2 gap=6">
+          <div class="grid md:grid-cols-2 gap-6">
             <div
               class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg border border-purple-500/20 rounded-xl p-6"
             >
@@ -1794,9 +1794,398 @@ spec:
             name: pgadmin
             port:
               number: 80
+  - host: grafana.$PROJECT.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+  - host: prometheus.$PROJECT.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
 EOF
 
-# Kustomization
+# Prometheus ConfigMap
+cat << EOF > k8s/base/prometheus-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: $NAMESPACE
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: 'fastapi'
+        metrics_path: /metrics
+        static_configs:
+          - targets: ['$PROJECT:8000']
+EOF
+
+# Prometheus Deployment
+cat << EOF > k8s/base/prometheus-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: $NAMESPACE
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: $NAMESPACE
+  labels:
+    app: prometheus
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+  type: ClusterIP
+EOF
+
+# Grafana Deployment
+cat << EOF > k8s/base/grafana-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: $NAMESPACE
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: admin
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: $NAMESPACE
+  labels:
+    app: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+EOF
+
+# Loki ConfigMap
+cat << EOF > k8s/base/loki-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: $NAMESPACE
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      path_prefix: /tmp/loki
+      storage:
+        filesystem:
+          chunks_directory: /tmp/loki/chunks
+          rules_directory: /tmp/loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+EOF
+
+# Loki Deployment
+cat << EOF > k8s/base/loki-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: $NAMESPACE
+  labels:
+    app: loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      containers:
+      - name: loki
+        image: grafana/loki:2.9.0
+        args:
+          - -config.file=/etc/loki/loki.yaml
+        ports:
+        - containerPort: 3100
+        volumeMounts:
+        - name: config
+          mountPath: /etc/loki
+      volumes:
+      - name: config
+        configMap:
+          name: loki-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: $NAMESPACE
+  labels:
+    app: loki
+spec:
+  selector:
+    app: loki
+  ports:
+  - port: 3100
+    targetPort: 3100
+  type: ClusterIP
+EOF
+
+# Promtail ConfigMap
+cat << EOF > k8s/base/promtail-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: $NAMESPACE
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+    positions:
+      filename: /tmp/positions.yaml
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+    scrape_configs:
+    - job_name: system
+      static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          __path__: /var/log/*log
+EOF
+
+# Promtail Deployment
+cat << EOF > k8s/base/promtail-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: promtail
+  namespace: $NAMESPACE
+  labels:
+    app: promtail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: promtail
+  template:
+    metadata:
+      labels:
+        app: promtail
+    spec:
+      containers:
+      - name: promtail
+        image: grafana/promtail:2.9.0
+        args:
+          - -config.file=/etc/promtail/promtail.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/promtail
+        - name: varlog
+          mountPath: /var/log
+      volumes:
+      - name: config
+        configMap:
+          name: promtail-config
+      - name: varlog
+        hostPath:
+          path: /var/log
+EOF
+
+# Tempo ConfigMap
+cat << EOF > k8s/base/tempo-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: $NAMESPACE
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            http:
+            grpc:
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+EOF
+
+# Tempo Deployment
+cat << EOF > k8s/base/tempo-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: $NAMESPACE
+  labels:
+    app: tempo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+    spec:
+      containers:
+      - name: tempo
+        image: grafana/tempo:2.5.0
+        args:
+          - -config.file=/etc/tempo/tempo.yaml
+        ports:
+        - containerPort: 3200
+        volumeMounts:
+        - name: config
+          mountPath: /etc/tempo
+        - name: data
+          mountPath: /var/tempo
+      volumes:
+      - name: config
+        configMap:
+          name: tempo-config
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: $NAMESPACE
+  labels:
+    app: tempo
+spec:
+  selector:
+    app: tempo
+  ports:
+  - port: 3200
+    targetPort: 3200
+  type: ClusterIP
+EOF
+
+# Kyverno Policy
+cat << 'EOF' > k8s/base/kyverno-policy.yaml
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  namespace: $NAMESPACE
+spec:
+  validationFailureAction: enforce
+  rules:
+  - name: check-for-labels
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "The labels 'app' and 'environment' are required."
+      pattern:
+        metadata:
+          labels:
+            app: "?*"
+            environment: "?*"
+EOF
+
+# Kustomization - POPRAWIONA WERSJA Z WSZYSTKIMI ZASOBAMI
 cat << EOF > k8s/base/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -1811,6 +2200,17 @@ resources:
   - postgres.yaml
   - pgadmin.yaml
   - ingress.yaml
+  - prometheus-config.yaml
+  - prometheus-deployment.yaml
+  - grafana-deployment.yaml
+  - loki-config.yaml
+  - loki-deployment.yaml
+  - promtail-config.yaml
+  - promtail-deployment.yaml
+  - tempo-config.yaml
+  - tempo-deployment.yaml
+  - kyverno-policy.yaml
+  - argocd-app.yaml
 
 commonLabels:
   app: $PROJECT
@@ -1893,6 +2293,29 @@ echo "   🔧 InitContainers - czekają na gotowość bazy przed uruchomieniem a
 echo "   🔧 Persistent Volume dla PostgreSQL - trwałość danych"
 echo "   🔧 Zwiększone zasoby dla PostgreSQL - lepsza wydajność"
 echo "   🔧 Lepsze health checks - szybsze wykrywanie gotowości"
+echo "   🔧 Poprawione importy w main.py (usunięto literówkę 'F')"
+echo "   🔧 Ulepszony formularz ankietowy w HTML"
+echo "   🔧 KOMPLETNA lista zasobów w kustomization.yaml"
+echo ""
+echo "📋 WSZYSTKIE OBIEKTY W kustomization.yaml:"
+echo "   ✅ configmap.yaml"
+echo "   ✅ secret.yaml" 
+echo "   ✅ deployment.yaml"
+echo "   ✅ service.yaml"
+echo "   ✅ postgres.yaml"
+echo "   ✅ pgadmin.yaml"
+echo "   ✅ ingress.yaml"
+echo "   ✅ prometheus-config.yaml"
+echo "   ✅ prometheus-deployment.yaml"
+echo "   ✅ grafana-deployment.yaml"
+echo "   ✅ loki-config.yaml"
+echo "   ✅ loki-deployment.yaml"
+echo "   ✅ promtail-config.yaml"
+echo "   ✅ promtail-deployment.yaml"
+echo "   ✅ tempo-config.yaml"
+echo "   ✅ tempo-deployment.yaml"
+echo "   ✅ kyverno-policy.yaml"
+echo "   ✅ argocd-app.yaml"
 echo ""
 echo "🚀 APLIKACJA JEST TERAZ ODPORNA NA PROBLEMY Z POŁĄCZENIEM DO BAZY!"
 echo "📊 Ankieta działa poprawnie z CORS"
@@ -1902,3 +2325,10 @@ echo ""
 echo "🌐 DOSTĘP:"
 echo "   Strona: http://$PROJECT.local"
 echo "   pgAdmin: http://pgadmin.$PROJECT.local (admin@admin.com/admin)"
+echo "   Grafana: http://grafana.$PROJECT.local (admin/admin)"
+echo "   Prometheus: http://prometheus.$PROJECT.local"
+echo ""
+echo "💾 BAZA DANYCH:"
+echo "   📝 survey_responses - odpowiedzi ankiet"
+echo "   👀 page_visits - śledzenie odwiedzin"
+echo "   💌 contact_messages - wiadomości kontaktowe"

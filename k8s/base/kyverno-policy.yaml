@@ -1,0 +1,21 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  namespace: davtrowebdb
+spec:
+  validationFailureAction: enforce
+  rules:
+    - name: check-for-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "The labels 'app' and 'environment' are required."
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+              environment: "?*"
